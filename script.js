@@ -155,7 +155,7 @@ function renderPeople() {
       toggle.type = "button";
       toggle.className = "type-adder-toggle";
       toggle.setAttribute("aria-expanded", "false");
-      toggle.innerHTML = `<span>＋ Thêm khoản</span><span class="type-adder-caret">⌄</span>`;
+      toggle.innerHTML = `<span>＋ Thêm...</span><span class="type-adder-caret">⌄</span>`;
 
       const menu = document.createElement("div");
       menu.className = "type-menu";
