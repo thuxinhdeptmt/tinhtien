@@ -19,30 +19,31 @@
       <button id="resetBtn" class="ghost-btn" type="button">Xóa dữ liệu</button>
     </header>
 
-    <section class="people-scroll" aria-label="Các khoản đã chi">
-      <div id="peopleGrid" class="people-grid"></div>
-    </section>
+    <div class="workspace">
+      <section class="people-scroll" aria-label="Các khoản đã chi">
+        <div id="peopleGrid" class="people-grid"></div>
+      </section>
 
-    <section class="result-section">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">TỔNG HỢP</p>
-          <h2>Kết quả</h2>
+      <aside class="result-section">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">TỔNG HỢP</p>
+            <h2>Kết quả</h2>
+          </div>
         </div>
-        <p class="result-note">Hàng = người trả · Cột = người nhận</p>
-      </div>
 
-      <div class="matrix-wrap">
-        <table class="result-matrix" id="resultMatrix">
-          <thead></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+        <div class="matrix-wrap">
+          <table class="result-matrix" id="resultMatrix">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
 
-      <div id="detailPanel" class="detail-panel empty">
-        <div class="detail-placeholder">Chọn một ô có số tiền để xem chi tiết.</div>
-      </div>
-    </section>
+        <div id="detailPanel" class="detail-panel empty">
+          <div class="detail-placeholder">Chọn một ô có số tiền để xem chi tiết.</div>
+        </div>
+      </aside>
+    </div>
   </main>
 
   <template id="groupTemplate">
@@ -52,7 +53,7 @@
       </div>
 
       <div class="expense-rows"></div>
-      <button class="add-expense-btn" type="button">+ Thêm khoản...</button>
+      <button class="add-expense-btn" type="button">＋ Thêm khoản...</button>
 
       <div class="group-summary">
         <div>
