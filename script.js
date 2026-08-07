@@ -4,6 +4,7 @@ const STORAGE_KEY = "bill-splitter-state-v1";
 const state = {
   people: {},
   selectedDebt: null,
+  editing: null,
 };
 
 function makeGroup(id, title, kind, target = null) {
@@ -98,6 +99,10 @@ function normalizeRows(group) {
   group.rows = [...filled, { name: "", price: "" }];
 }
 
+function findGroup(person, groupId) {
+  return state.people[person].groups.find(g => g.id === groupId);
+}
+
 function renderPeople() {
   const grid = document.getElementById("peopleGrid");
   grid.innerHTML = "";
@@ -129,51 +134,140 @@ function renderGroup(person, group) {
 
   renderRowsInto(node.querySelector(".expense-rows"), person, group, node);
   updateGroupSummary(node, group);
+
+  node.querySelector(".add-expense-btn").addEventListener("click", () => {
+    const blankIndex = group.rows.length - 1;
+    state.editing = { person, groupId: group.id, rowIndex: blankIndex, isNew: true };
+    renderRowsInto(node.querySelector(".expense-rows"), person, group, node);
+  });
+
   return node;
 }
 
-function renderRowsInto(rowsEl, person, group, groupNode, preferredIndex = null, preferredField = null) {
+function isEditing(person, groupId, rowIndex) {
+  return state.editing &&
+    state.editing.person === person &&
+    state.editing.groupId === groupId &&
+    state.editing.rowIndex === rowIndex;
+}
+
+function renderRowsInto(rowsEl, person, group, groupNode) {
   rowsEl.innerHTML = "";
-  group.rows.forEach((row, index) => {
-    const rowEl = document.createElement("div");
-    rowEl.className = "expense-row";
-    rowEl.innerHTML = `
-      <input class="name-input" type="text" autocomplete="off" placeholder="Tên khoản" value="${escapeHtml(row.name)}">
-      <input class="price-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${escapeHtml(formatInput(row.price))}">
-    `;
 
-    const nameInput = rowEl.querySelector(".name-input");
-    const priceInput = rowEl.querySelector(".price-input");
+  const visibleRows = group.rows.map((row, index) => ({ row, index }))
+    .filter(({ row, index }) => index < group.rows.length - 1 || isEditing(person, group.id, index));
 
-    nameInput.addEventListener("input", e => {
-      group.rows[index].name = e.target.value;
-      normalizeRows(group);
-      renderRowsInto(rowsEl, person, group, groupNode, index, "name");
-      updateAllCalculations();
-      saveState();
-    });
+  visibleRows.forEach(({ row, index }) => {
+    if (isEditing(person, group.id, index)) {
+      rowsEl.appendChild(renderEditorRow(person, group, index, groupNode));
+    } else {
+      rowsEl.appendChild(renderDisplayRow(person, group, index, groupNode));
+    }
+  });
+}
 
-    priceInput.addEventListener("input", e => {
-      group.rows[index].price = e.target.value;
-      normalizeRows(group);
-      renderRowsInto(rowsEl, person, group, groupNode, index, "price");
-      updateAllCalculations();
-      saveState();
-    });
+function renderDisplayRow(person, group, index, groupNode) {
+  const row = group.rows[index];
+  const rowEl = document.createElement("div");
+  rowEl.className = "expense-row-display";
+  rowEl.tabIndex = 0;
+  rowEl.title = "Bấm để sửa";
+  rowEl.innerHTML = `
+    <span class="expense-name">${escapeHtml(row.name || "Không tên")}</span>
+    <span class="expense-price">${formatMoney(parseMoney(row.price))}</span>
+    <button class="row-delete" type="button" aria-label="Xóa khoản">×</button>
+  `;
 
-    rowsEl.appendChild(rowEl);
+  const startEdit = () => {
+    state.editing = { person, groupId: group.id, rowIndex: index, isNew: false };
+    renderRowsInto(groupNode.querySelector(".expense-rows"), person, group, groupNode);
+  };
+
+  rowEl.addEventListener("click", e => {
+    if (e.target.closest(".row-delete")) return;
+    startEdit();
+  });
+  rowEl.addEventListener("keydown", e => {
+    if (e.key === "Enter") startEdit();
   });
 
-  if (preferredIndex !== null) {
-    const focusIndex = Math.min(preferredIndex, group.rows.length - 1);
-    const targetRow = rowsEl.children[focusIndex];
-    const target = targetRow?.querySelector(preferredField === "price" ? ".price-input" : ".name-input");
-    if (target) {
-      target.focus();
-      const len = target.value.length;
-      target.setSelectionRange(len, len);
+  rowEl.querySelector(".row-delete").addEventListener("click", e => {
+    e.stopPropagation();
+    group.rows.splice(index, 1);
+    normalizeRows(group);
+    state.editing = null;
+    renderRowsInto(groupNode.querySelector(".expense-rows"), person, group, groupNode);
+    updateAllCalculations();
+    saveState();
+  });
+
+  return rowEl;
+}
+
+function renderEditorRow(person, group, index, groupNode) {
+  const row = group.rows[index] || { name: "", price: "" };
+  const original = { name: row.name, price: row.price };
+  const isNew = state.editing?.isNew;
+  const rowEl = document.createElement("div");
+  rowEl.className = "expense-row-editor";
+  rowEl.innerHTML = `
+    <input class="name-input" type="text" autocomplete="off" placeholder="Tên khoản" value="${escapeHtml(row.name)}">
+    <input class="price-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${escapeHtml(formatInput(row.price))}">
+    <div class="editor-actions">
+      <button class="editor-save" type="button" title="Lưu">✓</button>
+      <button class="editor-cancel" type="button" title="Hủy">×</button>
+    </div>
+  `;
+
+  const nameInput = rowEl.querySelector(".name-input");
+  const priceInput = rowEl.querySelector(".price-input");
+
+  const syncDraft = () => {
+    group.rows[index].name = nameInput.value;
+    group.rows[index].price = priceInput.value;
+    updateGroupSummary(groupNode, group);
+    renderMatrix();
+  };
+
+  const commit = () => {
+    syncDraft();
+    normalizeRows(group);
+    state.editing = null;
+    renderRowsInto(groupNode.querySelector(".expense-rows"), person, group, groupNode);
+    updateAllCalculations();
+    saveState();
+  };
+
+  const cancel = () => {
+    if (isNew) {
+      group.rows[index] = { name: "", price: "" };
+    } else {
+      group.rows[index] = original;
     }
-  }
+    normalizeRows(group);
+    state.editing = null;
+    renderRowsInto(groupNode.querySelector(".expense-rows"), person, group, groupNode);
+    updateAllCalculations();
+  };
+
+  nameInput.addEventListener("input", syncDraft);
+  priceInput.addEventListener("input", syncDraft);
+  [nameInput, priceInput].forEach(input => {
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") commit();
+      if (e.key === "Escape") cancel();
+    });
+  });
+  rowEl.querySelector(".editor-save").addEventListener("click", commit);
+  rowEl.querySelector(".editor-cancel").addEventListener("click", cancel);
+
+  requestAnimationFrame(() => {
+    nameInput.focus();
+    const len = nameInput.value.length;
+    nameInput.setSelectionRange(len, len);
+  });
+
+  return rowEl;
 }
 
 function updateGroupSummary(groupNode, group) {
@@ -371,7 +465,7 @@ function updateAllCalculations() {
   document.querySelectorAll(".expense-group").forEach(groupNode => {
     const person = groupNode.dataset.person;
     const groupId = groupNode.dataset.group;
-    const group = state.people[person].groups.find(g => g.id === groupId);
+    const group = findGroup(person, groupId);
     if (group) updateGroupSummary(groupNode, group);
   });
   renderMatrix();
@@ -396,6 +490,7 @@ function resetAll() {
 
   localStorage.removeItem(STORAGE_KEY);
   state.selectedDebt = null;
+  state.editing = null;
   initState();
   renderPeople();
   renderMatrix();
