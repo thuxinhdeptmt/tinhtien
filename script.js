@@ -5,18 +5,18 @@ const state = {
   selectedDebt: null,
 };
 
-function makeGroup(id, title, hint, kind, target = null) {
-  return { id, title, hint, kind, target, rows: [{ name: "", price: "" }] };
+function makeGroup(id, title, kind, target = null) {
+  return { id, title, kind, target, rows: [{ name: "", price: "" }] };
 }
 
 function groupsFor(payer) {
   const others = PEOPLE.filter(p => p !== payer);
   return [
-    makeGroup("split3", "Chia cho 3", "Chia đều cho Linh, Trang và Vương", "split3"),
-    makeGroup(`split-${others[0]}`, `Chia với ${others[0]}`, `${payer} và ${others[0]} cùng chịu khoản này`, "split2", others[0]),
-    makeGroup(`advance-${others[0]}`, `Ứng tiền cho ${others[0]}`, `${payer} thanh toán toàn bộ thay ${others[0]}`, "advance", others[0]),
-    makeGroup(`split-${others[1]}`, `Chia với ${others[1]}`, `${payer} và ${others[1]} cùng chịu khoản này`, "split2", others[1]),
-    makeGroup(`advance-${others[1]}`, `Ứng tiền cho ${others[1]}`, `${payer} thanh toán toàn bộ thay ${others[1]}`, "advance", others[1]),
+    makeGroup("split3", "Chia cho 3", "split3"),
+    makeGroup(`split-${others[0]}`, `Chia với ${others[0]}`, "split2", others[0]),
+    makeGroup(`advance-${others[0]}`, `Ứng tiền cho ${others[0]}`, "advance", others[0]),
+    makeGroup(`split-${others[1]}`, `Chia với ${others[1]}`, "split2", others[1]),
+    makeGroup(`advance-${others[1]}`, `Ứng tiền cho ${others[1]}`, "advance", others[1]),
   ];
 }
 
@@ -57,7 +57,6 @@ function groupShare(group) {
 }
 
 function normalizeRows(group) {
-  // Giữ mọi dòng có nội dung và luôn để đúng 1 dòng trống ở cuối.
   const filled = group.rows.filter(row => row.name.trim() !== "" || parseMoney(row.price) > 0);
   group.rows = [...filled, { name: "", price: "" }];
 }
@@ -88,6 +87,36 @@ function renderPeople() {
   });
 }
 
+function createRowElement(person, group, groupNode, row, index) {
+  const rowEl = document.createElement("div");
+  rowEl.className = "expense-row";
+  rowEl.innerHTML = `
+    <input class="name-input" type="text" autocomplete="off" placeholder="Tên khoản" value="${escapeHtml(row.name)}">
+    <input class="price-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${escapeHtml(formatInput(row.price))}">
+  `;
+
+  const nameInput = rowEl.querySelector(".name-input");
+  const priceInput = rowEl.querySelector(".price-input");
+
+  nameInput.addEventListener("input", e => {
+    group.rows[index].name = e.target.value;
+    normalizeRows(group);
+    refreshGroupRows(person, group, groupNode, index, "name");
+    updateAllCalculations();
+  });
+
+  priceInput.addEventListener("input", e => {
+    const formatted = formatInput(e.target.value);
+    group.rows[index].price = formatted;
+    e.target.value = formatted;
+    normalizeRows(group);
+    refreshGroupRows(person, group, groupNode, index, "price");
+    updateAllCalculations();
+  });
+
+  return rowEl;
+}
+
 function renderGroup(person, group) {
   const tpl = document.getElementById("groupTemplate");
   const node = tpl.content.firstElementChild.cloneNode(true);
@@ -95,40 +124,10 @@ function renderGroup(person, group) {
   node.dataset.group = group.id;
 
   node.querySelector(".group-title").textContent = group.title;
-  node.querySelector(".group-hint").textContent = group.hint;
 
   const rowsEl = node.querySelector(".expense-rows");
   group.rows.forEach((row, index) => {
-    const rowEl = document.createElement("div");
-    rowEl.className = "expense-row";
-    rowEl.innerHTML = `
-      <input class="name-input" type="text" autocomplete="off" placeholder="Tên khoản" value="${escapeHtml(row.name)}">
-      <input class="price-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${escapeHtml(formatInput(row.price))}">
-    `;
-
-    const nameInput = rowEl.querySelector(".name-input");
-    const priceInput = rowEl.querySelector(".price-input");
-
-    nameInput.addEventListener("input", e => {
-      group.rows[index].name = e.target.value;
-      normalizeRows(group);
-      refreshGroupRows(person, group, node, index, "name");
-      updateAllCalculations();
-    });
-
-    priceInput.addEventListener("input", e => {
-      const caretWasAtEnd = e.target.selectionStart === e.target.value.length;
-      group.rows[index].price = e.target.value;
-      const formatted = formatInput(e.target.value);
-      e.target.value = formatted;
-      group.rows[index].price = formatted;
-      if (caretWasAtEnd) e.target.setSelectionRange(formatted.length, formatted.length);
-      normalizeRows(group);
-      refreshGroupRows(person, group, node, index, "price");
-      updateAllCalculations();
-    });
-
-    rowsEl.appendChild(rowEl);
+    rowsEl.appendChild(createRowElement(person, group, node, row, index));
   });
 
   updateGroupSummary(node, group);
@@ -137,38 +136,12 @@ function renderGroup(person, group) {
 
 function refreshGroupRows(person, group, groupNode, preferredIndex, preferredField) {
   const rowsEl = groupNode.querySelector(".expense-rows");
-  const activeWasLast = preferredIndex >= group.rows.length - 2;
   rowsEl.innerHTML = "";
 
   group.rows.forEach((row, index) => {
-    const rowEl = document.createElement("div");
-    rowEl.className = "expense-row";
-    rowEl.innerHTML = `
-      <input class="name-input" type="text" autocomplete="off" placeholder="Tên khoản" value="${escapeHtml(row.name)}">
-      <input class="price-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${escapeHtml(formatInput(row.price))}">
-    `;
-
-    const nameInput = rowEl.querySelector(".name-input");
-    const priceInput = rowEl.querySelector(".price-input");
-
-    nameInput.addEventListener("input", e => {
-      group.rows[index].name = e.target.value;
-      normalizeRows(group);
-      refreshGroupRows(person, group, groupNode, index, "name");
-      updateAllCalculations();
-    });
-
-    priceInput.addEventListener("input", e => {
-      group.rows[index].price = e.target.value;
-      normalizeRows(group);
-      refreshGroupRows(person, group, groupNode, index, "price");
-      updateAllCalculations();
-    });
-
-    rowsEl.appendChild(rowEl);
+    rowsEl.appendChild(createRowElement(person, group, groupNode, row, index));
   });
 
-  // Nếu vừa nhập ở dòng cuối, giữ focus tại dòng tương ứng sau khi tự sinh dòng mới.
   const focusIndex = Math.min(preferredIndex, group.rows.length - 1);
   const targetRow = rowsEl.children[focusIndex];
   if (targetRow) {
@@ -188,24 +161,17 @@ function updateGroupSummary(groupNode, group) {
 
   const shareLabel = groupNode.querySelector(".share-label");
   const shareValue = groupNode.querySelector(".sum-share");
-  const shareBox = groupNode.querySelector(".share-box");
 
-  if (group.kind === "split3") {
+  if (group.kind === "split3" || group.kind === "split2") {
     shareLabel.textContent = "Mỗi người";
     shareValue.textContent = formatMoney(share);
-    shareBox.classList.remove("hidden");
-  } else if (group.kind === "split2") {
-    shareLabel.textContent = `${group.target} chịu`;
-    shareValue.textContent = formatMoney(share);
-    shareBox.classList.remove("hidden");
   } else {
     shareLabel.textContent = `${group.target} trả`;
     shareValue.textContent = formatMoney(total);
-    shareBox.classList.remove("hidden");
   }
 }
 
-function buildDebtData() {
+function buildRawDebtData() {
   const debts = {};
   const details = {};
 
@@ -225,6 +191,7 @@ function buildDebtData() {
 
       let debtors = [];
       let divisor = 1;
+
       if (group.kind === "split3") {
         debtors = PEOPLE.filter(p => p !== payer);
         divisor = 3;
@@ -233,7 +200,6 @@ function buildDebtData() {
         divisor = 2;
       } else {
         debtors = [group.target];
-        divisor = 1;
       }
 
       debtors.forEach(debtor => {
@@ -245,6 +211,7 @@ function buildDebtData() {
             owed: raw / divisor,
           };
         });
+
         const subtotal = lines.reduce((sum, x) => sum + x.owed, 0);
         debts[debtor][payer] += subtotal;
         details[debtor][payer].push({
@@ -260,8 +227,36 @@ function buildDebtData() {
   return { debts, details };
 }
 
+function buildNetDebtData() {
+  const raw = buildRawDebtData();
+  const netDebts = {};
+
+  PEOPLE.forEach(person => {
+    netDebts[person] = {};
+    PEOPLE.forEach(other => {
+      netDebts[person][other] = 0;
+    });
+  });
+
+  for (let i = 0; i < PEOPLE.length; i++) {
+    for (let j = i + 1; j < PEOPLE.length; j++) {
+      const a = PEOPLE[i];
+      const b = PEOPLE[j];
+      const aToB = raw.debts[a][b];
+      const bToA = raw.debts[b][a];
+      const diff = aToB - bToA;
+
+      if (diff > 0) netDebts[a][b] = diff;
+      if (diff < 0) netDebts[b][a] = Math.abs(diff);
+    }
+  }
+
+  return { debts: netDebts, rawDebts: raw.debts, details: raw.details };
+}
+
 function renderMatrix() {
-  const { debts, details } = buildDebtData();
+  const data = buildNetDebtData();
+  const { debts } = data;
   const table = document.getElementById("resultMatrix");
   const thead = table.querySelector("thead");
   const tbody = table.querySelector("tbody");
@@ -290,13 +285,15 @@ function renderMatrix() {
           td.textContent = formatMoney(value);
           td.dataset.debtor = debtor;
           td.dataset.receiver = receiver;
+
           if (state.selectedDebt?.debtor === debtor && state.selectedDebt?.receiver === receiver) {
             td.classList.add("active");
           }
+
           td.addEventListener("click", () => {
             state.selectedDebt = { debtor, receiver };
             renderMatrix();
-            renderDetails(debtor, receiver, debts, details);
+            renderDetails(debtor, receiver, data);
           });
         } else {
           td.classList.add("empty-value");
@@ -312,15 +309,34 @@ function renderMatrix() {
 
   if (state.selectedDebt) {
     const { debtor, receiver } = state.selectedDebt;
-    if (debts[debtor][receiver] > 0) renderDetails(debtor, receiver, debts, details);
+    if (debts[debtor][receiver] > 0) renderDetails(debtor, receiver, data);
     else clearDetails();
   }
 }
 
-function renderDetails(debtor, receiver, debts, details) {
+function renderDetailGroups(groups) {
+  return groups.map(group => `
+    <div class="detail-group">
+      <div class="detail-group-title">
+        <span>${group.payer} đã chi · ${group.groupTitle}</span>
+        <span>${formatMoney(group.subtotal)}</span>
+      </div>
+      ${group.lines.map(line => `
+        <div class="detail-line">
+          <span class="name">${escapeHtml(line.name)}</span>
+          <span class="amount">${formatMoney(line.owed)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `).join("");
+}
+
+function renderDetails(debtor, receiver, data) {
   const panel = document.getElementById("detailPanel");
-  const groups = details[debtor][receiver];
-  const total = debts[debtor][receiver];
+  const total = data.debts[debtor][receiver];
+  const forward = data.rawDebts[debtor][receiver];
+  const reverse = data.rawDebts[receiver][debtor];
+  const groups = data.details[debtor][receiver];
 
   panel.classList.remove("empty");
   panel.innerHTML = `
@@ -329,20 +345,8 @@ function renderDetails(debtor, receiver, debts, details) {
       <div class="detail-total">${formatMoney(total)}</div>
     </div>
     <div class="detail-body">
-      ${groups.map(group => `
-        <div class="detail-group">
-          <div class="detail-group-title">
-            <span>${receiver} đã chi · ${group.groupTitle}</span>
-            <span>${formatMoney(group.subtotal)}</span>
-          </div>
-          ${group.lines.map(line => `
-            <div class="detail-line">
-              <span class="name">${escapeHtml(line.name)}</span>
-              <span class="amount">${formatMoney(line.owed)}</span>
-            </div>
-          `).join("")}
-        </div>
-      `).join("")}
+      ${renderDetailGroups(groups)}
+      ${reverse > 0 ? `<div class="detail-net-note">Đã đối trừ trực tiếp ${formatMoney(reverse)} theo chiều ${receiver} → ${debtor}.</div>` : ""}
     </div>
   `;
 }
@@ -351,7 +355,7 @@ function clearDetails() {
   state.selectedDebt = null;
   const panel = document.getElementById("detailPanel");
   panel.className = "detail-panel empty";
-  panel.innerHTML = `<div class="detail-placeholder">Chọn một ô có số tiền để xem các bill tạo nên khoản đó.</div>`;
+  panel.innerHTML = `<div class="detail-placeholder">Chọn một ô có số tiền để xem chi tiết.</div>`;
 }
 
 function updateAllCalculations() {
@@ -379,7 +383,9 @@ function resetAll() {
       group.rows.some(row => row.name.trim() !== "" || parseMoney(row.price) > 0)
     )
   );
+
   if (hasData && !confirm("Xóa toàn bộ dữ liệu đang nhập?")) return;
+
   state.people = {};
   state.selectedDebt = null;
   initState();
