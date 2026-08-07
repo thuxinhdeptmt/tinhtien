@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tính tiền</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">BILL SPLITTER</p>
+        <h1>Tính tiền</h1>
+        <p class="subtitle">Nhập các khoản đã chi của Linh, Trang và Vương. Kết quả tự cập nhật ngay.</p>
+      </div>
+      <button id="resetBtn" class="ghost-btn" type="button">Xóa dữ liệu</button>
+    </header>
+
+    <section class="people-scroll" aria-label="Các khoản đã chi">
+      <div id="peopleGrid" class="people-grid"></div>
+    </section>
+
+    <section class="result-section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">TỔNG HỢP</p>
+          <h2>Kết quả</h2>
+        </div>
+        <p class="result-note">Hàng = người trả · Cột = người nhận</p>
+      </div>
+
+      <div class="matrix-wrap">
+        <table class="result-matrix" id="resultMatrix">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div id="detailPanel" class="detail-panel empty">
+        <div class="detail-placeholder">
+          Chọn một ô có số tiền để xem các bill tạo nên khoản đó.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <template id="groupTemplate">
+    <section class="expense-group">
+      <div class="group-head">
+        <div>
+          <h3 class="group-title"></h3>
+          <p class="group-hint"></p>
+        </div>
+      </div>
+
+      <div class="rows-head" aria-hidden="true">
+        <span>Tên</span>
+        <span>Giá</span>
+      </div>
+      <div class="expense-rows"></div>
+
+      <div class="group-summary">
+        <div>
+          <span>Tổng</span>
+          <strong class="sum-total">—</strong>
+        </div>
+        <div class="share-box">
+          <span class="share-label">Chia</span>
+          <strong class="sum-share">—</strong>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <script src="script.js"></script>
+</body>
+</html>
