@@ -114,7 +114,6 @@ function renderPeople() {
     panel.innerHTML = `
       <div class="person-head">
         <h2 class="person-title">${person} đã chi</h2>
-        <span class="person-chip">${person}</span>
       </div>
       <div class="groups-stack"></div>
     `;
@@ -375,6 +374,8 @@ function renderMatrix() {
     PEOPLE.forEach(receiver => {
       const td = document.createElement("td");
       td.className = "result-cell";
+      td.dataset.debtor = debtor;
+      td.dataset.receiver = receiver;
 
       if (debtor === receiver) {
         td.classList.add("diagonal");
@@ -414,9 +415,17 @@ function collapseGroups(items) {
     .filter(x => x.amount > 0.000001);
 }
 
+function personColor(person) {
+  return {
+    Linh: "#de7fa4",
+    Trang: "#67ad6b",
+    Vương: "#e49a3f",
+  }[person] || "#7e8782";
+}
+
 function detailRowsHtml(items, sign) {
   return items.map(item => `
-    <div class="calc-row ${sign === "+" ? "positive" : "negative"}">
+    <div class="calc-row">
       <span class="calc-label">${escapeHtml(item.title)}</span>
       <span class="calc-amount">${sign}${formatMoney(item.amount)}</span>
     </div>
@@ -428,27 +437,35 @@ function renderDetails(debtor, receiver, data) {
   const plusItems = collapseGroups(data.raw.grouped[debtor][receiver]);
   const minusItems = collapseGroups(data.raw.grouped[receiver][debtor]);
   const total = data.net[debtor][receiver];
+  const plusColor = personColor(receiver);
+  const minusColor = personColor(debtor);
 
   panel.classList.remove("empty");
   panel.innerHTML = `
     <div class="detail-head">
       <h3>${debtor} trả ${receiver}</h3>
-      <div class="detail-total">${formatMoney(total)}</div>
+      <div class="detail-total" style="color:${plusColor}">${formatMoney(total)}</div>
     </div>
     <div class="calc-body">
-      <div class="calc-side">
-        <div class="calc-side-title"><strong>${receiver} đã chi</strong><span>Cộng</span></div>
+      <div class="calc-side positive-side" style="--party-color:${plusColor}">
+        <div class="calc-side-title">
+          <strong class="calc-person">${receiver}</strong>
+          <span class="mode">Cộng</span>
+        </div>
         ${detailRowsHtml(plusItems, "+")}
       </div>
       ${minusItems.length ? `
-        <div class="calc-side subtract">
-          <div class="calc-side-title"><strong>${debtor} đã chi</strong><span>Trừ</span></div>
-          ${detailRowsHtml(minusItems, "-")}
+        <div class="calc-side negative-side" style="--party-color:${minusColor}">
+          <div class="calc-side-title">
+            <strong class="calc-person">${debtor}</strong>
+            <span class="mode">Trừ</span>
+          </div>
+          ${detailRowsHtml(minusItems, "−")}
         </div>
       ` : ""}
       <div class="calc-result">
         <span>Còn phải trả</span>
-        <strong>${formatMoney(total)}</strong>
+        <strong style="color:${plusColor}">${formatMoney(total)}</strong>
       </div>
     </div>
   `;
