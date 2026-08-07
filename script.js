@@ -1,4 +1,5 @@
 const PEOPLE = ["Linh", "Trang", "Vương"];
+const STORAGE_KEY = "bill-splitter-state-v1";
 
 const state = {
   people: {},
@@ -21,9 +22,45 @@ function groupsFor(payer) {
 }
 
 function initState() {
+  state.people = {};
   PEOPLE.forEach(person => {
     state.people[person] = { groups: groupsFor(person) };
   });
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    if (!saved?.people) return false;
+
+    initState();
+    PEOPLE.forEach(person => {
+      const savedGroups = saved.people?.[person]?.groups || [];
+      state.people[person].groups.forEach(group => {
+        const old = savedGroups.find(g => g.id === group.id);
+        if (!old || !Array.isArray(old.rows)) return;
+        group.rows = old.rows.map(row => ({
+          name: String(row?.name ?? ""),
+          price: String(row?.price ?? ""),
+        }));
+        normalizeRows(group);
+      });
+    });
+    return true;
+  } catch (error) {
+    console.warn("Không thể đọc dữ liệu đã lưu:", error);
+    return false;
+  }
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ people: state.people }));
+  } catch (error) {
+    console.warn("Không thể lưu dữ liệu:", error);
+  }
 }
 
 function parseMoney(value) {
@@ -69,7 +106,6 @@ function renderPeople() {
     const panel = document.createElement("article");
     panel.className = "person-panel";
     panel.dataset.person = person;
-
     panel.innerHTML = `
       <div class="person-head">
         <h2 class="person-title">${person} đã chi</h2>
@@ -79,42 +115,9 @@ function renderPeople() {
     `;
 
     const stack = panel.querySelector(".groups-stack");
-    state.people[person].groups.forEach(group => {
-      stack.appendChild(renderGroup(person, group));
-    });
-
+    state.people[person].groups.forEach(group => stack.appendChild(renderGroup(person, group)));
     grid.appendChild(panel);
   });
-}
-
-function createRowElement(person, group, groupNode, row, index) {
-  const rowEl = document.createElement("div");
-  rowEl.className = "expense-row";
-  rowEl.innerHTML = `
-    <input class="name-input" type="text" autocomplete="off" placeholder="Tên khoản" value="${escapeHtml(row.name)}">
-    <input class="price-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${escapeHtml(formatInput(row.price))}">
-  `;
-
-  const nameInput = rowEl.querySelector(".name-input");
-  const priceInput = rowEl.querySelector(".price-input");
-
-  nameInput.addEventListener("input", e => {
-    group.rows[index].name = e.target.value;
-    normalizeRows(group);
-    refreshGroupRows(person, group, groupNode, index, "name");
-    updateAllCalculations();
-  });
-
-  priceInput.addEventListener("input", e => {
-    const formatted = formatInput(e.target.value);
-    group.rows[index].price = formatted;
-    e.target.value = formatted;
-    normalizeRows(group);
-    refreshGroupRows(person, group, groupNode, index, "price");
-    updateAllCalculations();
-  });
-
-  return rowEl;
 }
 
 function renderGroup(person, group) {
@@ -122,30 +125,49 @@ function renderGroup(person, group) {
   const node = tpl.content.firstElementChild.cloneNode(true);
   node.dataset.person = person;
   node.dataset.group = group.id;
-
   node.querySelector(".group-title").textContent = group.title;
 
-  const rowsEl = node.querySelector(".expense-rows");
-  group.rows.forEach((row, index) => {
-    rowsEl.appendChild(createRowElement(person, group, node, row, index));
-  });
-
+  renderRowsInto(node.querySelector(".expense-rows"), person, group, node);
   updateGroupSummary(node, group);
   return node;
 }
 
-function refreshGroupRows(person, group, groupNode, preferredIndex, preferredField) {
-  const rowsEl = groupNode.querySelector(".expense-rows");
+function renderRowsInto(rowsEl, person, group, groupNode, preferredIndex = null, preferredField = null) {
   rowsEl.innerHTML = "";
-
   group.rows.forEach((row, index) => {
-    rowsEl.appendChild(createRowElement(person, group, groupNode, row, index));
+    const rowEl = document.createElement("div");
+    rowEl.className = "expense-row";
+    rowEl.innerHTML = `
+      <input class="name-input" type="text" autocomplete="off" placeholder="Tên khoản" value="${escapeHtml(row.name)}">
+      <input class="price-input" type="text" inputmode="numeric" autocomplete="off" placeholder="0" value="${escapeHtml(formatInput(row.price))}">
+    `;
+
+    const nameInput = rowEl.querySelector(".name-input");
+    const priceInput = rowEl.querySelector(".price-input");
+
+    nameInput.addEventListener("input", e => {
+      group.rows[index].name = e.target.value;
+      normalizeRows(group);
+      renderRowsInto(rowsEl, person, group, groupNode, index, "name");
+      updateAllCalculations();
+      saveState();
+    });
+
+    priceInput.addEventListener("input", e => {
+      group.rows[index].price = e.target.value;
+      normalizeRows(group);
+      renderRowsInto(rowsEl, person, group, groupNode, index, "price");
+      updateAllCalculations();
+      saveState();
+    });
+
+    rowsEl.appendChild(rowEl);
   });
 
-  const focusIndex = Math.min(preferredIndex, group.rows.length - 1);
-  const targetRow = rowsEl.children[focusIndex];
-  if (targetRow) {
-    const target = targetRow.querySelector(preferredField === "price" ? ".price-input" : ".name-input");
+  if (preferredIndex !== null) {
+    const focusIndex = Math.min(preferredIndex, group.rows.length - 1);
+    const targetRow = rowsEl.children[focusIndex];
+    const target = targetRow?.querySelector(preferredField === "price" ? ".price-input" : ".name-input");
     if (target) {
       target.focus();
       const len = target.value.length;
@@ -162,80 +184,67 @@ function updateGroupSummary(groupNode, group) {
   const shareLabel = groupNode.querySelector(".share-label");
   const shareValue = groupNode.querySelector(".sum-share");
 
-  if (group.kind === "split3" || group.kind === "split2") {
-    shareLabel.textContent = "Mỗi người";
-    shareValue.textContent = formatMoney(share);
-  } else {
+  if (group.kind === "advance") {
     shareLabel.textContent = `${group.target} trả`;
     shareValue.textContent = formatMoney(total);
+  } else {
+    shareLabel.textContent = "Mỗi người";
+    shareValue.textContent = formatMoney(share);
   }
 }
 
+// Công nợ thô: debtor -> receiver.
 function buildRawDebtData() {
   const debts = {};
-  const details = {};
+  const grouped = {};
 
   PEOPLE.forEach(debtor => {
     debts[debtor] = {};
-    details[debtor] = {};
+    grouped[debtor] = {};
     PEOPLE.forEach(receiver => {
       debts[debtor][receiver] = 0;
-      details[debtor][receiver] = [];
+      grouped[debtor][receiver] = [];
     });
   });
 
   PEOPLE.forEach(payer => {
     state.people[payer].groups.forEach(group => {
-      const filledRows = group.rows.filter(row => parseMoney(row.price) > 0);
-      if (!filledRows.length) return;
+      const total = groupTotal(group);
+      if (total <= 0) return;
 
       let debtors = [];
-      let divisor = 1;
+      let owedPerDebtor = total;
 
       if (group.kind === "split3") {
         debtors = PEOPLE.filter(p => p !== payer);
-        divisor = 3;
+        owedPerDebtor = total / 3;
       } else if (group.kind === "split2") {
         debtors = [group.target];
-        divisor = 2;
+        owedPerDebtor = total / 2;
       } else {
         debtors = [group.target];
       }
 
       debtors.forEach(debtor => {
-        const lines = filledRows.map(row => {
-          const raw = parseMoney(row.price);
-          return {
-            name: row.name.trim() || "Khoản không tên",
-            original: raw,
-            owed: raw / divisor,
-          };
-        });
-
-        const subtotal = lines.reduce((sum, x) => sum + x.owed, 0);
-        debts[debtor][payer] += subtotal;
-        details[debtor][payer].push({
-          payer,
+        debts[debtor][payer] += owedPerDebtor;
+        grouped[debtor][payer].push({
           groupTitle: group.title,
-          lines,
-          subtotal,
+          amount: owedPerDebtor,
         });
       });
     });
   });
 
-  return { debts, details };
+  return { debts, grouped };
 }
 
+// Chỉ đối trừ trực tiếp theo từng cặp, không bù trừ qua người thứ ba.
 function buildNetDebtData() {
   const raw = buildRawDebtData();
-  const netDebts = {};
-
-  PEOPLE.forEach(person => {
-    netDebts[person] = {};
-    PEOPLE.forEach(other => {
-      netDebts[person][other] = 0;
-    });
+  const net = {};
+  PEOPLE.forEach(a => {
+    net[a] = {};
+    PEOPLE.forEach(b => net[a][b] = 0);
   });
 
   for (let i = 0; i < PEOPLE.length; i++) {
@@ -245,18 +254,16 @@ function buildNetDebtData() {
       const aToB = raw.debts[a][b];
       const bToA = raw.debts[b][a];
       const diff = aToB - bToA;
-
-      if (diff > 0) netDebts[a][b] = diff;
-      if (diff < 0) netDebts[b][a] = Math.abs(diff);
+      if (diff > 0) net[a][b] = diff;
+      if (diff < 0) net[b][a] = -diff;
     }
   }
 
-  return { debts: netDebts, rawDebts: raw.debts, details: raw.details };
+  return { raw, net };
 }
 
 function renderMatrix() {
   const data = buildNetDebtData();
-  const { debts } = data;
   const table = document.getElementById("resultMatrix");
   const thead = table.querySelector("thead");
   const tbody = table.querySelector("tbody");
@@ -279,64 +286,54 @@ function renderMatrix() {
         td.classList.add("diagonal");
         td.textContent = "•";
       } else {
-        const value = debts[debtor][receiver];
+        const value = data.net[debtor][receiver];
         if (value > 0) {
           td.classList.add("has-value");
           td.textContent = formatMoney(value);
-          td.dataset.debtor = debtor;
-          td.dataset.receiver = receiver;
-
-          if (state.selectedDebt?.debtor === debtor && state.selectedDebt?.receiver === receiver) {
-            td.classList.add("active");
-          }
-
+          if (state.selectedDebt?.debtor === debtor && state.selectedDebt?.receiver === receiver) td.classList.add("active");
           td.addEventListener("click", () => {
             state.selectedDebt = { debtor, receiver };
             renderMatrix();
-            renderDetails(debtor, receiver, data);
           });
         } else {
           td.classList.add("empty-value");
           td.textContent = "—";
         }
       }
-
       tr.appendChild(td);
     });
-
     tbody.appendChild(tr);
   });
 
   if (state.selectedDebt) {
     const { debtor, receiver } = state.selectedDebt;
-    if (debts[debtor][receiver] > 0) renderDetails(debtor, receiver, data);
-    else clearDetails();
+    if (data.net[debtor][receiver] > 0) renderDetails(debtor, receiver, data);
+    else clearDetails(false);
   }
 }
 
-function renderDetailGroups(groups) {
-  return groups.map(group => `
-    <div class="detail-group">
-      <div class="detail-group-title">
-        <span>${group.payer} đã chi · ${group.groupTitle}</span>
-        <span>${formatMoney(group.subtotal)}</span>
-      </div>
-      ${group.lines.map(line => `
-        <div class="detail-line">
-          <span class="name">${escapeHtml(line.name)}</span>
-          <span class="amount">${formatMoney(line.owed)}</span>
-        </div>
-      `).join("")}
+function collapseGroups(items) {
+  const map = new Map();
+  items.forEach(item => map.set(item.groupTitle, (map.get(item.groupTitle) || 0) + item.amount));
+  return [...map.entries()]
+    .map(([title, amount]) => ({ title, amount }))
+    .filter(x => x.amount > 0.000001);
+}
+
+function detailRowsHtml(items, sign) {
+  return items.map(item => `
+    <div class="calc-row ${sign === "+" ? "positive" : "negative"}">
+      <span class="calc-label">${escapeHtml(item.title)}</span>
+      <span class="calc-amount">${sign}${formatMoney(item.amount)}</span>
     </div>
   `).join("");
 }
 
 function renderDetails(debtor, receiver, data) {
   const panel = document.getElementById("detailPanel");
-  const total = data.debts[debtor][receiver];
-  const forward = data.rawDebts[debtor][receiver];
-  const reverse = data.rawDebts[receiver][debtor];
-  const groups = data.details[debtor][receiver];
+  const plusItems = collapseGroups(data.raw.grouped[debtor][receiver]);
+  const minusItems = collapseGroups(data.raw.grouped[receiver][debtor]);
+  const total = data.net[debtor][receiver];
 
   panel.classList.remove("empty");
   panel.innerHTML = `
@@ -344,15 +341,27 @@ function renderDetails(debtor, receiver, data) {
       <h3>${debtor} trả ${receiver}</h3>
       <div class="detail-total">${formatMoney(total)}</div>
     </div>
-    <div class="detail-body">
-      ${renderDetailGroups(groups)}
-      ${reverse > 0 ? `<div class="detail-net-note">Đã đối trừ trực tiếp ${formatMoney(reverse)} theo chiều ${receiver} → ${debtor}.</div>` : ""}
+    <div class="calc-body">
+      <div class="calc-side">
+        <div class="calc-side-title"><strong>${receiver} đã chi</strong><span>Cộng</span></div>
+        ${detailRowsHtml(plusItems, "+")}
+      </div>
+      ${minusItems.length ? `
+        <div class="calc-side subtract">
+          <div class="calc-side-title"><strong>${debtor} đã chi</strong><span>Trừ</span></div>
+          ${detailRowsHtml(minusItems, "-")}
+        </div>
+      ` : ""}
+      <div class="calc-result">
+        <span>Còn phải trả</span>
+        <strong>${formatMoney(total)}</strong>
+      </div>
     </div>
   `;
 }
 
-function clearDetails() {
-  state.selectedDebt = null;
+function clearDetails(resetSelection = true) {
+  if (resetSelection) state.selectedDebt = null;
   const panel = document.getElementById("detailPanel");
   panel.className = "detail-panel empty";
   panel.innerHTML = `<div class="detail-placeholder">Chọn một ô có số tiền để xem chi tiết.</div>`;
@@ -383,10 +392,9 @@ function resetAll() {
       group.rows.some(row => row.name.trim() !== "" || parseMoney(row.price) > 0)
     )
   );
-
   if (hasData && !confirm("Xóa toàn bộ dữ liệu đang nhập?")) return;
 
-  state.people = {};
+  localStorage.removeItem(STORAGE_KEY);
   state.selectedDebt = null;
   initState();
   renderPeople();
@@ -396,6 +404,6 @@ function resetAll() {
 
 document.getElementById("resetBtn").addEventListener("click", resetAll);
 
-initState();
+if (!loadState()) initState();
 renderPeople();
 renderMatrix();
